@@ -1,0 +1,37 @@
+name: weekly-report
+
+on:
+  schedule:
+    - cron: "0 22 * * 0"   # 월요일 07:00 KST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Sweep + build
+        run: python tools/radar.py all --days 8
+      - name: Guard (빈 리포트 발행 방지)
+        run: |
+          python - <<'EOF'
+          import glob, json, sys
+          f = sorted(glob.glob("data/leads-*.json"))[-1]
+          n = len(json.load(open(f, encoding="utf-8"))["leads"])
+          print(f"{f}: {n}건")
+          if n < 5:
+              sys.exit("수집 결과가 비정상적으로 적습니다(수집원 차단 가능성). 발행 중단 — 로컬 run_weekly.ps1로 발행하세요.")
+          EOF
+      - name: Commit & push
+        run: |
+          git config user.name "balju-radar-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "주간 리포트 자동 발행"
+          git push
